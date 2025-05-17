@@ -1,14 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-// For development purposes, use mock values
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-key';
+// Get environment variables with fallbacks for development
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+// Flag to indicate if we're using mock data
+export const isUsingMockData = !supabaseUrl || !supabaseAnonKey;
 
 // Create a single supabase client for the browser
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  isUsingMockData ? 'https://mock.supabase.co' : supabaseUrl,
+  isUsingMockData ? 'mock-anon-key' : supabaseAnonKey
+);
 
-// Flag to indicate we're using mock data
-export const isUsingMockData = !process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Log the current mode for debugging
+console.log(`Supabase client initialized in ${isUsingMockData ? 'MOCK' : 'REAL'} mode`);
 
 // Mock data implementations
 export const mockData = {
