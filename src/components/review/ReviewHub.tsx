@@ -32,7 +32,7 @@ import SortIcon from '@mui/icons-material/Sort';
 import SearchIcon from '@mui/icons-material/Search';
 import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
-import AiTutor from '../practice/AiTutor';
+
 
 // GraphQL query to get subjects
 const GET_SUBJECTS = gql`
@@ -123,9 +123,7 @@ const MOCK_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // Mock user plan for demo purposes
 const MOCK_USER_PLAN = {
-  tier: 'free',
-  tutor_tokens_today: 0,
-  tutor_tokens_limit: 2
+  tier: 'free'
 };
 
 interface Choice {
@@ -491,11 +489,7 @@ export default function ReviewHub() {
                         Response time: {(answer.response_ms / 1000).toFixed(2)} seconds
                       </Typography>
                       
-                      <AiTutor 
-                        questionId={answer.question.id} 
-                        questionText={answer.question.stem}
-                        userPlan={MOCK_USER_PLAN}
-                      />
+
                     </Box>
                   )}
                 </CardContent>

@@ -25,7 +25,7 @@ export default function Home() {
             Ace Your GED Test with Adaptive Learning
           </Typography>
           <Typography variant="h5" color="text.secondary" sx={{ maxWidth: 800, mb: 4 }}>
-            Personalized practice, AI tutoring, and real-time feedback to help you succeed.
+            Personalized practice, adaptive learning, and real-time feedback to help you succeed.
           </Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <Button
@@ -71,10 +71,10 @@ export default function Home() {
               <CardContent>
                 <QuizIcon color="primary" sx={{ fontSize: 40, mb: 2 }} />
                 <Typography variant="h5" component="h3" gutterBottom>
-                  AI Tutor
+                  Personalized Learning
                 </Typography>
                 <Typography color="text.secondary">
-                  Get personalized explanations and guidance from our AI tutor when you're stuck on a problem.
+                  Get personalized explanations and guidance tailored to your learning style when you're stuck on a problem.
                 </Typography>
               </CardContent>
             </Card>

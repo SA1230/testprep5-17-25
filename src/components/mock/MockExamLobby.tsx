@@ -261,7 +261,7 @@ export default function MockExamLobby() {
                 <ListItemIcon>
                   <CheckCircleIcon color="primary" />
                 </ListItemIcon>
-                <ListItemText primary="100 AI tutor tokens per day" />
+                <ListItemText primary="Personalized study recommendations" />
               </ListItem>
               <ListItem>
                 <ListItemIcon>

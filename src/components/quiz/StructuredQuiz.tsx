@@ -28,8 +28,9 @@ import {
   DialogActions,
   SelectChangeEvent
 } from '@mui/material';
-import { useQuery, gql } from '@apollo/client';
+import { useQuery, useMutation, gql } from '@apollo/client';
 import TimerIcon from '@mui/icons-material/Timer';
+import { supabase } from '@/lib/supabase/client';
 
 // GraphQL query to get subjects
 const GET_SUBJECTS = gql`
@@ -64,6 +65,18 @@ const GET_QUIZ_QUESTIONS = gql`
             name
           }
         }
+      }
+    }
+  }
+`;
+
+// GraphQL mutation to save quiz results (batch insert answer events)
+const SAVE_QUIZ_RESULTS = gql`
+  mutation SaveQuizResults($objects: [AnswerEventsInsertInput!]!) {
+    insertIntoAnswerEventsCollection(objects: $objects) {
+      affectedCount
+      records {
+        id
       }
     }
   }
@@ -111,17 +124,22 @@ export default function StructuredQuiz() {
   const [timeRemaining, setTimeRemaining] = useState(QUIZ_TIME_LIMIT);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [showResultDialog, setShowResultDialog] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [userPlan, setUserPlan] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Query to get all subjects
   const { data: subjectsData, loading: subjectsLoading } = useQuery(GET_SUBJECTS);
 
   // Query to get quiz questions
-  const { data: questionsData, loading: questionsLoading } = 
-    useQuery(GET_QUIZ_QUESTIONS, {
-      variables: { subject_id: selectedSubject, limit: QUIZ_LENGTH },
-      skip: !selectedSubject || !quizStarted,
-      fetchPolicy: 'network-only'
-    });
+  const { data: questionsData, loading: questionsLoading } = useQuery(GET_QUIZ_QUESTIONS, {
+    variables: { subject_id: selectedSubject, limit: QUIZ_LENGTH },
+    skip: !selectedSubject || !quizStarted,
+    fetchPolicy: 'network-only'
+  });
+
+  // Mutation to save quiz results
+  const [saveQuizResults, { loading: savingResults }] = useMutation(SAVE_QUIZ_RESULTS);
 
   // Handle subject selection
   const handleSubjectChange = (event: SelectChangeEvent) => {
@@ -161,14 +179,29 @@ export default function StructuredQuiz() {
   };
 
   // Complete the quiz and calculate results
-  const completeQuiz = () => {
+  const completeQuiz = async () => {
     setQuizCompleted(true);
     
     // Calculate results
     let correctCount = 0;
+    const answerEvents = [];
+    
     for (let i = 0; i < questions.length; i++) {
-      if (userAnswers[i] === questions[i].correct_choice) {
+      const isCorrect = userAnswers[i] === questions[i].correct_choice;
+      if (isCorrect) {
         correctCount++;
+      }
+      
+      // If user is authenticated, prepare data for saving to database
+      if (user) {
+        answerEvents.push({
+          user_id: user.id,
+          question_id: questions[i].id,
+          selected_choice: userAnswers[i],
+          is_correct: isCorrect,
+          time_spent: QUIZ_TIME_LIMIT - timeRemaining, // This is approximate since we don't track per-question time
+          context: 'quiz'
+        });
       }
     }
     
@@ -181,6 +214,20 @@ export default function StructuredQuiz() {
       timeTaken,
       accuracy
     });
+    
+    // Save results to database if user is authenticated
+    if (user && answerEvents.length > 0) {
+      try {
+        await saveQuizResults({
+          variables: {
+            objects: answerEvents
+          }
+        });
+        console.log('Quiz results saved successfully');
+      } catch (error) {
+        console.error('Error saving quiz results:', error);
+      }
+    }
     
     setShowResultDialog(true);
   };
@@ -208,6 +255,62 @@ export default function StructuredQuiz() {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  // Effect to check authentication and user plan
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        setIsLoading(true);
+        
+        // Check authentication status
+        const { data: authData } = await supabase.auth.getSession();
+        setUser(authData.session?.user || null);
+        
+        // If authenticated, fetch user plan
+        if (authData.session?.user) {
+          const { data: planData, error: planError } = await supabase
+            .from('user_plan')
+            .select('*')
+            .eq('user_id', authData.session.user.id)
+            .single();
+          
+          if (planError && planError.code !== 'PGRST116') { // Not found is ok for new users
+            console.error('Error fetching user plan:', planError);
+          }
+          
+          setUserPlan(planData || { tier: 'free' });
+        }
+      } catch (err) {
+        console.error('Error checking authentication:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    checkAuth();
+    
+    // Set up auth state listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user || null);
+      
+      // Check user_plan on auth change
+      if (session?.user) {
+        const { data: planData } = await supabase
+          .from('user_plan')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+        
+        setUserPlan(planData || { tier: 'free' });
+      } else {
+        setUserPlan(null);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   // Effect to set the questions when data is loaded
   useEffect(() => {
     if (questionsData?.questionsCollection?.edges) {
@@ -234,8 +337,12 @@ export default function StructuredQuiz() {
   }, [quizStarted, quizCompleted, timeRemaining]);
 
   // Loading state
-  if (subjectsLoading) {
-    return <CircularProgress />;
+  if (isLoading || subjectsLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+        <CircularProgress />
+      </Box>
+    );
   }
 
   // Extract subjects from the query result
@@ -247,6 +354,35 @@ export default function StructuredQuiz() {
 
   return (
     <Box sx={{ mt: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4">
+          Structured Quiz
+        </Typography>
+        
+        {!user ? (
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => supabase.auth.signInWithOAuth({ provider: 'google' })}
+          >
+            Sign In to Save Progress
+          </Button>
+        ) : (
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="body2" sx={{ mr: 2 }}>
+              Signed in as {user.email}
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => supabase.auth.signOut()}
+            >
+              Sign Out
+            </Button>
+          </Box>
+        )}
+      </Box>
+      
       {!quizStarted ? (
         <Card>
           <CardContent>
@@ -293,28 +429,28 @@ export default function StructuredQuiz() {
         <Box>
           {/* Timer and progress bar */}
           <Paper sx={{ p: 2, mb: 4 }}>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={6}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2, alignItems: 'center' }}>
+              <Box sx={{ gridColumn: 'span 6' }}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <TimerIcon color="primary" />
                   <Typography variant="h6">
                     {formatTime(timeRemaining)}
                   </Typography>
                 </Stack>
-              </Grid>
-              <Grid item xs={6}>
+              </Box>
+              <Box sx={{ gridColumn: 'span 6' }}>
                 <Typography variant="body2" align="right">
                   Question {currentQuestionIndex + 1} of {questions.length}
                 </Typography>
-              </Grid>
-              <Grid item xs={12}>
+              </Box>
+              <Box sx={{ gridColumn: 'span 12' }}>
                 <LinearProgress 
                   variant="determinate" 
                   value={(currentQuestionIndex / questions.length) * 100} 
                   sx={{ height: 10, borderRadius: 5 }}
                 />
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Paper>
           
           {/* Question card */}

@@ -41,9 +41,7 @@ const MOCK_USER = {
     correctAnswers: 87,
     quizzesTaken: 5,
     mockExamsTaken: 1,
-    studyTime: 8.5, // hours
-    aiTutorTokensUsed: 2,
-    aiTutorTokensRemaining: 0
+    studyTime: 8.5 // hours
   },
   streakDays: 4
 };
@@ -88,7 +86,7 @@ const featureCards = [
 const premiumFeatures = [
   'Unlimited practice questions',
   'Access to all mock exams',
-  '100 AI tutor tokens per day',
+  'Personalized study recommendations',
   'Detailed performance analytics',
   'Custom study plans'
 ];
@@ -146,14 +144,14 @@ export default function Dashboard() {
           <Grid item xs={12} md={6}>
             <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
               <Typography variant="subtitle1" gutterBottom>
-                AI Tutor Tokens
+                Study Time
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
                 <Typography variant="h6" sx={{ mr: 1 }}>
-                  {MOCK_USER.stats.aiTutorTokensRemaining}
+                  {MOCK_USER.stats.studyTime} hrs
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  remaining today
+                  study time
                 </Typography>
               </Box>
               {!isPremiumUser && (

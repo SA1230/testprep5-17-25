@@ -22,8 +22,9 @@ import {
   MenuItem,
   SelectChangeEvent
 } from '@mui/material';
-import AiTutor from './AiTutor';
+
 import { useQuery, useMutation, gql } from '@apollo/client';
+import { supabase } from '@/lib/supabase/client';
 
 // GraphQL query to get subjects
 const GET_SUBJECTS = gql`
@@ -87,15 +88,7 @@ const SUBMIT_ANSWER = gql`
   }
 `;
 
-// Mock user ID for demo purposes
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000000';
 
-// Mock user plan for demo purposes
-const MOCK_USER_PLAN = {
-  tier: 'free',
-  tutor_tokens_today: 0,
-  tutor_tokens_limit: 2
-};
 
 interface Choice {
   label: string;
@@ -129,6 +122,9 @@ export default function PracticePanel() {
   const [responseTime, setResponseTime] = useState<number>(0);
   const [questionsAnswered, setQuestionsAnswered] = useState<number>(0);
   const [correctAnswers, setCorrectAnswers] = useState<number>(0);
+  const [user, setUser] = useState<any>(null);
+  const [userPlan, setUserPlan] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Query to get all subjects
   const { data: subjectsData, loading: subjectsLoading } = useQuery(GET_SUBJECTS);
@@ -181,18 +177,22 @@ export default function PracticePanel() {
       setCorrectAnswers(prev => prev + 1);
     }
 
-    // Submit answer to the server
-    try {
-      await submitAnswer({
-        variables: {
-          user_id: MOCK_USER_ID,
-          question_id: currentQuestion.id,
-          is_correct: isAnswerCorrect,
-          response_ms: timeTaken
-        }
-      });
-    } catch (error) {
-      console.error('Error submitting answer:', error);
+    // Submit answer to the server if user is authenticated
+    if (user) {
+      try {
+        await submitAnswer({
+          variables: {
+            user_id: user.id,
+            question_id: currentQuestion.id,
+            is_correct: isAnswerCorrect,
+            response_ms: timeTaken
+          }
+        });
+      } catch (error) {
+        console.error('Error submitting answer:', error);
+      }
+    } else {
+      console.log('User not authenticated, answer not saved to server');
     }
   };
 
@@ -211,6 +211,75 @@ export default function PracticePanel() {
     setStartTime(Date.now());
   };
 
+  // Effect to check authentication and user plan
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        setIsLoading(true);
+        
+        // Check authentication status
+        const { data: authData } = await supabase.auth.getSession();
+        setUser(authData.session?.user || null);
+        
+        // If authenticated, fetch user plan
+        if (authData.session?.user) {
+          const { data: planData, error: planError } = await supabase
+            .from('user_plan')
+            .select('*')
+            .eq('user_id', authData.session.user.id)
+            .single();
+          
+          if (planError && planError.code !== 'PGRST116') { // Not found is ok for new users
+            console.error('Error fetching user plan:', planError);
+          }
+          
+          // Set default user plan if none exists
+          if (planData) {
+            setUserPlan(planData);
+          } else {
+            setUserPlan({
+              tier: 'free'
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error checking authentication:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    checkAuth();
+    
+    // Set up auth state listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user || null);
+      
+      // Check user_plan on auth change
+      if (session?.user) {
+        const { data: planData } = await supabase
+          .from('user_plan')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+        
+        if (planData) {
+          setUserPlan(planData);
+        } else {
+          setUserPlan({
+            tier: 'free'
+          });
+        }
+      } else {
+        setUserPlan(null);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   // Effect to set the current question when data is loaded
   useEffect(() => {
     if (questionData?.questionsCollection?.edges?.length > 0) {
@@ -221,8 +290,24 @@ export default function PracticePanel() {
   }, [questionData]);
 
   // Loading state
-  if (subjectsLoading) {
-    return <CircularProgress />;
+  if (isLoading || subjectsLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Authentication check
+  if (!user) {
+    return (
+      <Alert severity="warning" sx={{ mt: 2 }}>
+        <Typography variant="body1">Please sign in to access the Practice Panel.</Typography>
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          Your progress and answers will not be saved until you sign in.
+        </Typography>
+      </Alert>
+    );
   }
 
   // Extract subjects from the query result
@@ -327,12 +412,7 @@ export default function PracticePanel() {
                     Response time: {(responseTime / 1000).toFixed(2)} seconds
                   </Typography>
                   
-                  {/* AI Tutor integration */}
-                  <AiTutor 
-                    questionId={currentQuestion.id} 
-                    questionText={currentQuestion.stem}
-                    userPlan={MOCK_USER_PLAN}
-                  />
+
                   
                   <Box sx={{ mt: 2 }}>
                     <Button 
